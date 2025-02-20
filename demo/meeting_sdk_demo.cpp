@@ -95,8 +95,6 @@ unsigned int userID;
 
 
 
-
-
 //this will enable or disable logic to get raw video and raw audio
 //do note that this will be overwritten by config.txt
 bool GetVideoRawData = true;
@@ -599,6 +597,7 @@ void JoinMeeting()
 			pAudioContext->EnableAutoJoinAudio(true);
 		}
 	}
+
 	if (SendVideoRawData) {
 
 		//ensure video is turned on
@@ -610,6 +609,7 @@ void JoinMeeting()
 			pVideoContext->EnableAutoTurnOffVideoWhenJoinMeeting(false);
 		}
 	}
+
 	if (SendAudioRawData) {
 
 		ZOOM_SDK_NAMESPACE::IAudioSettingContext* pAudioContext = m_pSettingService->GetAudioSettings();
@@ -622,7 +622,6 @@ void JoinMeeting()
 
 		}
 	}
-
 
 		//attempt to join meeting
 		if (m_pMeetingService)
@@ -686,8 +685,19 @@ void LeaveMeeting()
 //callback when authentication is compeleted
 void OnAuthenticationComplete()
 {
-	std::cout << "OnAuthenticationComplete" << std::endl;
-	JoinMeeting();
+	std::cout << "OnAuthenticationComplete callback received" << std::endl;
+	
+	if (m_pAuthService) {
+		ZOOM_SDK_NAMESPACE::AuthResult authResult = m_pAuthService->GetAuthResult();
+		if (authResult == ZOOM_SDK_NAMESPACE::AUTHRET_SUCCESS) {
+			std::cout << "Authentication successful, proceeding to join meeting" << std::endl;
+			JoinMeeting();
+		} else {
+			std::cerr << "Authentication failed with result code: " << authResult << std::endl;
+		}
+	} else {
+		std::cerr << "Auth service is null in OnAuthenticationComplete" << std::endl;
+	}
 }
 
 void AuthMeetingSDK()
@@ -695,31 +705,36 @@ void AuthMeetingSDK()
 	SDKError err(SDKError::SDKERR_SUCCESS);
 
 	//create auth service
-	if ((err = CreateAuthService(&m_pAuthService)) != SDKError::SDKERR_SUCCESS) {};
+	if ((err = CreateAuthService(&m_pAuthService)) != SDKError::SDKERR_SUCCESS) {
+		std::cerr << "Failed to create auth service, error code: " << err << std::endl;
+		return;
+	}
 	std::cerr << "AuthService created." << std::endl;
+
+	//set the event listener for onauthenticationcompleted
+	if ((err = m_pAuthService->SetEvent(new AuthServiceEventListener(&OnAuthenticationComplete))) != SDKError::SDKERR_SUCCESS) {
+		std::cerr << "Failed to set auth event listener, error code: " << err << std::endl;
+		return;
+	}
+	std::cout << "AuthServiceEventListener added." << std::endl;
 
 	//Create a param to insert jwt token
 	ZOOM_SDK_NAMESPACE::AuthContext param;
-
-	//set the event listener for onauthenticationcompleted
-	if ((err = m_pAuthService->SetEvent(new AuthServiceEventListener(&OnAuthenticationComplete))) != SDKError::SDKERR_SUCCESS) {};
-	std::cout << "AuthServiceEventListener added." << std::endl;
-
-
-	if (!token.size() == 0){
+	if (!token.empty()) {
 		param.jwt_token = token.c_str();
-		std::cerr << "AuthSDK:token extracted from config file " <<param.jwt_token  << std::endl;
+		std::cerr << "AuthSDK: Attempting authentication with token" << std::endl;
+	} else {
+		std::cerr << "AuthSDK: Error - Empty token" << std::endl;
+		return;
 	}
-	m_pAuthService->SDKAuth(param);
-	////attempt to authenticate
-	//ZOOM_SDK_NAMESPACE::SDKError sdkErrorResult = m_pAuthService->SDKAuth(param);
 
-	//if (ZOOM_SDK_NAMESPACE::SDKERR_SUCCESS != sdkErrorResult){
-	//	std::cerr << "AuthSDK:error " << std::endl;
-	//}
-	//else{
-	//	std::cerr << "AuthSDK:send success, awaiting callback " << std::endl;
-	//}
+	//attempt to authenticate
+	SDKError sdkErrorResult = m_pAuthService->SDKAuth(param);
+	if (ZOOM_SDK_NAMESPACE::SDKERR_SUCCESS != sdkErrorResult) {
+		std::cerr << "AuthSDK: Authentication request failed with error code: " << sdkErrorResult << std::endl;
+	} else {
+		std::cerr << "AuthSDK: Authentication request sent successfully, waiting for callback..." << std::endl;
+	}
 }
 
 void InitMeetingSDK()
@@ -755,8 +770,6 @@ void InitMeetingSDK()
 	//	std::cout << "NetworkConnectionHandler registered. Detecting proxy." << std::endl;
 	//}
 }
-
-
 
 
 //used for non headless app 
@@ -833,13 +846,9 @@ int main(int argc, char* argv[])
 
 	ReadTEXTSettings();
 
-	
-
 	InitMeetingSDK();
 	AuthMeetingSDK();
 	initAppSettings();
-
-
 
 	loop = g_main_loop_new(NULL, FALSE);
 	// add source to default context

@@ -7,7 +7,7 @@ check_and_install_packages() {
 
     # Check if we have sudo rights
     if ! command -v sudo &> /dev/null; then
-        echo "Error: This script requires sudo privileges to install missing packages."
+        echo "Error: This script requires sudo privileges to install missing packages." >&2
         exit 1
     fi
 
@@ -20,7 +20,7 @@ check_and_install_packages() {
 
     # If there are missing packages, try to install them
     if [ ${#missing_packages[@]} -ne 0 ]; then
-        echo "Installing required packages: ${missing_packages[*]}"
+        [ "$VERBOSE" = "true" ] && echo "Installing required packages: ${missing_packages[*]}"
         if [ -f /etc/debian_version ]; then
             # Debian/Ubuntu
             sudo apt-get update
@@ -29,18 +29,28 @@ check_and_install_packages() {
             # CentOS/RHEL
             sudo yum install -y "${missing_packages[@]}"
         else
-            echo "Error: Unsupported distribution. Please install ${missing_packages[*]} manually."
+            echo "Error: Unsupported distribution. Please install ${missing_packages[*]} manually." >&2
             exit 1
         fi
     fi
 }
 
+# Parse command line arguments
+VERBOSE=false
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        --quiet) VERBOSE=false ;;
+        -v|--verbose) VERBOSE=true ;;
+        *) MEETING_ID="$1" ;;
+    esac
+    shift
+done
+
 # Function to validate meeting number
 validate_meeting_number() {
     local mn=$1
-    # Check if meeting number contains only digits
     if ! [[ "$mn" =~ ^[0-9]+$ ]]; then
-        echo "Error: Meeting number must contain only digits"
+        echo "Error: Meeting number must contain only digits" >&2
         exit 1
     fi
 }
@@ -50,22 +60,18 @@ ENV_FILE="$(dirname "$0")/../.env"
 if [ -f "$ENV_FILE" ]; then
     export $(cat "$ENV_FILE" | grep -v '#' | xargs)
 else
-    echo "Error: .env file not found at $ENV_FILE"
+    echo "Error: .env file not found at $ENV_FILE" >&2
     exit 1
 fi
 
 # Check if required environment variables are set
 if [ -z "$ZOOM_ACCOUNT_ID" ] || [ -z "$ZOOM_CLIENT_ID" ] || [ -z "$ZOOM_CLIENT_SECRET" ]; then
-    echo "Error: Required environment variables are not set"
-    echo "Please make sure ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, and ZOOM_CLIENT_SECRET are set in .env file"
+    echo "Error: Required environment variables are not set" >&2
+    echo "Please make sure ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, and ZOOM_CLIENT_SECRET are set in .env file" >&2
     exit 1
 fi
 
-# Get meeting number from argument or prompt
-MEETING_ID=${1:-}
-if [ -z "$MEETING_ID" ]; then
-    read -p "Enter meeting number: " MEETING_ID
-fi
+# Validate meeting number
 validate_meeting_number "$MEETING_ID"
 
 # Check and install required packages
@@ -82,8 +88,8 @@ get_access_token() {
     
     # Check if jq command succeeded and response contains access_token
     if ! access_token=$(echo "$response" | jq -r '.access_token' 2>/dev/null) || [ "$access_token" = "null" ]; then
-        echo "Error: Failed to get access token"
-        echo "Response: $response"
+        echo "Error: Failed to get access token" >&2
+        echo "Response: $response" >&2
         exit 1
     fi
     
@@ -100,8 +106,8 @@ get_recording_token() {
     
     # Check if jq command succeeded and response contains token
     if ! recording_token=$(echo "$response" | jq -r '.token' 2>/dev/null) || [ "$recording_token" = "null" ]; then
-        echo "Error: Failed to get recording token"
-        echo "Response: $response"
+        echo "Error: Failed to get recording token" >&2
+        echo "Response: $response" >&2
         exit 1
     fi
     
@@ -109,11 +115,9 @@ get_recording_token() {
 }
 
 # Main execution
-echo "Getting access token..."
+[ "$VERBOSE" = "true" ] && echo "Getting access token..."
 access_token=$(get_access_token)
-echo "Access token obtained successfully"
-echo "Access token: $access_token"
-
-echo "Getting recording token for meeting ID: $MEETING_ID"
+[ "$VERBOSE" = "true" ] && echo "Access token obtained successfully"
+[ "$VERBOSE" = "true" ] && echo "Getting recording token for meeting ID: $MEETING_ID"
 recording_token=$(get_recording_token "$access_token" "$MEETING_ID")
-echo "Recording token: $recording_token" 
+echo "$recording_token" 
