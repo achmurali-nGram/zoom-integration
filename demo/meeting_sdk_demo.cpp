@@ -103,7 +103,7 @@ bool SendVideoRawData = false;
 bool SendAudioRawData = false;
 
 
-//this is a helper method to get the first User ID, it is just an arbitary UserID
+// this is a helper method to get the first User ID, it is just an arbitary UserID
 uint32_t getUserID() {
 	m_pParticipantsController = m_pMeetingService->GetMeetingParticipantsController();
 	int returnvalue = m_pParticipantsController->GetParticipantsList()->GetItem(0);
@@ -127,9 +127,8 @@ IUserInfo* getUserObj() {
 	return returnvalue;
 }
 
-//check if you have permission to start raw recording
+// check if you have permission to start raw recording
 void CheckAndStartRawRecording(bool isVideo, bool isAudio) {
-
 	if (isVideo || isAudio) {
 		m_pRecordController = m_pMeetingService->GetMeetingRecordingController();
 		SDKError err2 = m_pMeetingService->GetMeetingRecordingController()->CanStartRawRecording();
@@ -155,11 +154,42 @@ void CheckAndStartRawRecording(bool isVideo, bool isAudio) {
 				}
 				//GetAudioRawData
 				if (isAudio) {
+					// First check if audio system is ready
+					IMeetingAudioController* audioController = m_pMeetingService->GetMeetingAudioController();
+					if (!audioController) {
+						std::cout << "Audio controller not available" << std::endl;
+						return;
+					}
+
+					// Initialize audio system
+					audioController->JoinVoip();
+					
+					// Wait briefly for audio system to initialize
+					std::this_thread::sleep_for(std::chrono::seconds(2));
+
+					// Get the audio raw data helper
 					audioHelper = GetAudioRawdataHelper();
 					if (audioHelper) {
+						// Make sure our audio source is properly initialized
+						if (!audio_source) {
+							audio_source = new ZoomSDKAudioRawData();
+						}
+
 						SDKError err = audioHelper->subscribe(audio_source);
 						if (err != SDKERR_SUCCESS) {
-							std::cout << "Error occurred subscribing to audio : " << err << std::endl;
+							std::cout << "Error occurred subscribing to audio: " << err << std::endl;
+							switch(err) {
+								case SDKERR_MODULE_LOAD_FAILED: 
+									std::cout << "Audio device module error - check PulseAudio setup" << std::endl;
+									break;
+								case SDKERR_NO_AUDIODEVICE_ISFOUND:
+									std::cout << "No audio device found" << std::endl;
+									break;
+								default:
+									std::cout << "Unknown audio error" << err << std::endl;
+							}
+						} else {
+							std::cout << "Successfully subscribed to audio" << std::endl;
 						}
 					}
 					else {
@@ -221,18 +251,18 @@ void CheckAndStartRawSending(bool isVideo, bool isAudio) {
 
 //callback when given host permission
 void onIsHost() {
-	printf("Is host now...\n");
+	std::cout << "Is host now...\n";
 	CheckAndStartRawRecording(GetVideoRawData, GetAudioRawData);
 }
 
 //callback when given cohost permission
 void onIsCoHost() {
-	printf("Is co-host now...\n");
+	std::cout << "Is co-host now...\n";
 	CheckAndStartRawRecording(GetVideoRawData, GetAudioRawData);
 }
 //callback when given recording permission
 void onIsGivenRecordingPermission() {
-	printf("Is given recording permissions now...\n");
+	std::cout << "Is given recording permissions now...\n";
 	CheckAndStartRawRecording(GetVideoRawData, GetAudioRawData);
 }
 
@@ -246,10 +276,11 @@ void turnOnSendVideoAndAudio() {
 	if (SendAudioRawData) {
 		IMeetingAudioController* meetingAudController = m_pMeetingService->GetMeetingAudioController();
 		meetingAudController->JoinVoip();
-		printf("Is my audio muted: %d\n", getMyself()->IsAudioMuted());
+		std::cout << "Is my audio muted: " << getMyself()->IsAudioMuted() << std::endl;
 		meetingAudController->UnMuteAudio(getMyself()->GetUserID());
 	}
 }
+
 void turnOffSendVideoandAudio() {
 	//testing WIP
 	if (SendVideoRawData) {
@@ -594,7 +625,10 @@ void JoinMeeting()
 		if (pAudioContext)
 		{
 			//ensure auto join audio
-			pAudioContext->EnableAutoJoinAudio(true);
+			std::cout << "Enabling auto join audio" << std::endl;
+			auto ret = pAudioContext->EnableAutoJoinAudio(true);
+
+			std::cout << "Auto Join Audio Return value: " << ret << std::endl;
 		}
 	}
 
@@ -843,15 +877,25 @@ void initAppSettings()
 
 int main(int argc, char* argv[])
 {
+	// Check PulseAudio status
+	FILE* pipe = popen("pulseaudio --check", "r");
+	if (!pipe) {
+		std::cout << "Error checking PulseAudio status" << std::endl;
+	} else {
+		int status = pclose(pipe);
+		if (status != 0) {
+			std::cout << "PulseAudio not running properly. Please check setup." << std::endl;
+			// You might want to try starting it here:
+			system("pulseaudio --start");
+		}
+	}
 
 	ReadTEXTSettings();
-
 	InitMeetingSDK();
 	AuthMeetingSDK();
 	initAppSettings();
 
 	loop = g_main_loop_new(NULL, FALSE);
-	// add source to default context
 	g_timeout_add(1000, timeout_callback, loop);
 	g_main_loop_run(loop);
 	return 0;

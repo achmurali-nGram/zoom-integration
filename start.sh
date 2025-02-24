@@ -83,8 +83,8 @@ meeting_password: "$MEETING_PASSWORD"
 recording_token: "$RECORDING_TOKEN"
 GetVideoRawData: "true"
 GetAudioRawData: "true"
-SendVideoRawData: "true"
-SendAudioRawData: "true"
+SendVideoRawData: "false"
+SendAudioRawData: "false"
 EOL
 
 # Log the config file contents
